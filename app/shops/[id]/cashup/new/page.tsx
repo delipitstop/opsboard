@@ -1,35 +1,48 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 type Payout = { description: string; amount: string }
 
+const DELIVERY_SERVICES = [
+  { key: 'deliveroo', label: 'Deliveroo', icon: '🚴' },
+  { key: 'just_eat', label: 'Just Eat', icon: '🍔' },
+  { key: 'tgtg', label: 'TooGoodToGo', icon: '📦' },
+]
+
 export default function RecordCashup() {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const shopId = params.id as string
   const today = new Date().toISOString().split('T')[0]
 
   const [form, setForm] = useState({
-    trn: today,
+    trn: searchParams.get('week') || today,
     z_cash: '',
     z_card: '',
+    card_tipping: '',
     deliveroo: '',
     just_eat: '',
     tgtg: '',
-    card_tipping: '',
   })
 
-  const [payouts, setPayouts] = useState<Payout[]>( [
-    { description: '', amount: '' },
-  ])
+  const [enabledServices, setEnabledServices] = useState<Record<string, boolean>>({
+    deliveroo: true,
+    just_eat: true,
+    tgtg: true,
+  })
 
+  const [payouts, setPayouts] = useState<Payout[]>([{ description: '', amount: '' }])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   const update = (field: string, value: string) => setForm(f => ({ ...f, [field]: value }))
+
+  const toggleService = (key: string) =>
+    setEnabledServices(s => ({ ...s, [key]: !s[key] }))
 
   const addPayout = () => setPayouts(p => [...p, { description: '', amount: '' }])
 
@@ -39,13 +52,18 @@ export default function RecordCashup() {
     setPayouts(p => p.map((item, i) => i === index ? { ...item, [field]: value } : item))
   }
 
-  const gross = (['z_cash', 'z_card', 'deliveroo', 'just_eat', 'tgtg'] as const).reduce(
-    (sum, f) => sum + (parseFloat(form[f]) || 0), 0
-  )
-
-  const totalPayouts = payouts.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const zCash = parseFloat(form.z_cash) || 0
+  const zCard = parseFloat(form.z_card) || 0
+  const cardTip = parseFloat(form.card_tipping) || 0
+  const totalPayouts = payouts.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const banking = zCash - totalPayouts
+
+  const deliveryIncome = DELIVERY_SERVICES.reduce((sum, s) => {
+    if (enabledServices[s.key]) return sum + (parseFloat(form[s.key as keyof typeof form] as string) || 0)
+    return sum
+  }, 0)
+
+  const gross = zCash + zCard + deliveryIncome + cardTip
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -59,11 +77,11 @@ export default function RecordCashup() {
       shop_id: shopId,
       trn: trnDate,
       z_cash: zCash,
-      z_card: parseFloat(form.z_card) || 0,
-      deliveroo: parseFloat(form.deliveroo) || 0,
-      just_eat: parseFloat(form.just_eat) || 0,
-      tgtg: parseFloat(form.tgtg) || 0,
-      card_tipping: parseFloat(form.card_tipping) || 0,
+      z_card: zCard,
+      card_tipping: cardTip,
+      deliveroo: enabledServices.deliveroo ? (parseFloat(form.deliveroo) || 0) : 0,
+      just_eat: enabledServices.just_eat ? (parseFloat(form.just_eat) || 0) : 0,
+      tgtg: enabledServices.tgtg ? (parseFloat(form.tgtg) || 0) : 0,
     }, { onConflict: 'shop_id,trn' })
 
     if (cashupError) {
@@ -72,28 +90,17 @@ export default function RecordCashup() {
       return
     }
 
-    // Save payouts — delete old ones for this date, re-insert
-    const { error: deleteError } = await supabase
-      .from('cashup_payouts')
-      .delete()
-      .eq('shop_id', shopId)
-      .eq('trn', trnDate)
-
     const validPayouts = payouts.filter(p => p.description.trim() && parseFloat(p.amount) > 0)
+    await supabase.from('cashup_payouts').delete().eq('shop_id', shopId).eq('trn', trnDate.toISOString().split('T')[0])
+
     if (validPayouts.length > 0) {
       const payoutRows = validPayouts.map(p => ({
         shop_id: shopId,
-        trn: trnDate,
+        trn: trnDate.toISOString().split('T')[0],
         description: p.description.trim(),
         amount: parseFloat(p.amount),
       }))
-
-      const { error: payoutError } = await supabase.from('cashup_payouts').insert(payoutRows)
-      if (payoutError) {
-        setError(payoutError.message)
-        setLoading(false)
-        return
-      }
+      await supabase.from('cashup_payouts').insert(payoutRows)
     }
 
     router.push(`/shops/${shopId}?tab=cashup`)
@@ -109,7 +116,7 @@ export default function RecordCashup() {
 
       <main className="max-w-xl mx-auto p-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Record Cashup</h1>
-        <p className="text-gray-500 text-sm mb-6">Enter all income and costs for the day.</p>
+        <p className="text-gray-500 text-sm mb-6">Enter income and payouts for the day.</p>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
@@ -126,23 +133,58 @@ export default function RecordCashup() {
           {/* Income */}
           <div className="bg-white rounded-xl border p-6 space-y-3">
             <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Income</h3>
+
+            {/* Zettle */}
             <div className="grid grid-cols-2 gap-3">
-              {([
-                ['z_cash', 'Zettle Cash (£)'],
-                ['z_card', 'Zettle Card (£)'],
-                ['deliveroo', 'Deliveroo (£)'],
-                ['just_eat', 'Just Eat (£)'],
-                ['tgtg', 'TooGoodToGo (£)'],
-                ['card_tipping', 'Card Tipping (£)'],
-              ] as const).map(([field, label]) => (
-                <div key={field}>
-                  <label className="block text-xs text-gray-500 mb-1">{label}</label>
-                  <input type="number" step="0.01" min="0" value={form[field]}
-                    onChange={e => update(field, e.target.value)} placeholder="0.00"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Zettle Cash (£)</label>
+                <input type="number" step="0.01" min="0" value={form.z_cash}
+                  onChange={e => update('z_cash', e.target.value)} placeholder="0.00"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Zettle Card (£)</label>
+                <input type="number" step="0.01" min="0" value={form.z_card}
+                  onChange={e => update('z_card', e.target.value)} placeholder="0.00"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Card Tipping (£)</label>
+              <input type="number" step="0.01" min="0" value={form.card_tipping}
+                onChange={e => update('card_tipping', e.target.value)} placeholder="0.00"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+            </div>
+
+            <div className="border-t pt-3">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Delivery Platforms</h4>
+                <button type="button" onClick={() => DELIVERY_SERVICES.forEach(s => {
+                  if (!enabledServices[s.key]) setEnabledServices(s2 => ({ ...s2, [s.key]: true }))
+                })}
+                  className="text-xs text-blue-600 hover:underline">+ Enable all</button>
+              </div>
+
+              {DELIVERY_SERVICES.map(service => (
+                <div key={service.key} className="flex items-center gap-3 mb-2">
+                  <input type="checkbox"
+                    checked={enabledServices[service.key]}
+                    onChange={() => toggleService(service.key)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  <label className="text-sm text-gray-700 flex-1">{service.label}</label>
+                  {enabledServices[service.key] ? (
+                    <input type="number" step="0.01" min="0"
+                      value={form[service.key as keyof typeof form]}
+                      onChange={e => update(service.key, e.target.value)} placeholder="£0.00"
+                      className="w-28 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                  ) : (
+                    <span className="w-28 text-xs text-gray-400 text-right">Disabled</span>
+                  )}
                 </div>
               ))}
             </div>
+
             <div className="bg-blue-50 rounded-lg p-3 flex justify-between items-center">
               <span className="text-sm text-blue-700 font-medium">Gross Takings</span>
               <span className="text-lg font-bold text-blue-900">£{gross.toFixed(2)}</span>
@@ -169,7 +211,7 @@ export default function RecordCashup() {
                   <input type="number" step="0.01" min="0" value={payout.amount}
                     onChange={e => updatePayout(index, 'amount', e.target.value)}
                     placeholder="£0.00"
-                    className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                    className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
                   {payouts.length > 1 && (
                     <button type="button" onClick={() => removePayout(index)}
                       className="text-red-400 hover:text-red-600 text-sm font-bold px-2">✕</button>
@@ -178,7 +220,7 @@ export default function RecordCashup() {
               ))}
             </div>
 
-            {payouts.length > 0 && (
+            {payouts.length > 0 && totalPayouts > 0 && (
               <div className="bg-red-50 rounded-lg p-3 flex justify-between items-center">
                 <span className="text-sm text-red-700 font-medium">Total Payouts</span>
                 <span className="text-base font-bold text-red-900">£{totalPayouts.toFixed(2)}</span>
