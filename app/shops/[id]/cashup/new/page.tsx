@@ -7,9 +7,9 @@ import { createClient } from '@/lib/supabase/client'
 type Payout = { description: string; amount: string }
 
 const DELIVERY_SERVICES = [
-  { key: 'deliveroo', label: 'Deliveroo', icon: '🚴' },
-  { key: 'just_eat', label: 'Just Eat', icon: '🍔' },
-  { key: 'tgtg', label: 'TooGoodToGo', icon: '📦' },
+  { key: 'deliveroo', label: 'Deliveroo' },
+  { key: 'just_eat', label: 'Just Eat' },
+  { key: 'tgtg', label: 'TooGoodToGo' },
 ]
 
 export default function RecordCashup() {
@@ -23,7 +23,6 @@ export default function RecordCashup() {
     trn: searchParams.get('week') || today,
     z_cash: '',
     z_card: '',
-    card_tipping: '',
     deliveroo: '',
     just_eat: '',
     tgtg: '',
@@ -54,7 +53,6 @@ export default function RecordCashup() {
 
   const zCash = parseFloat(form.z_cash) || 0
   const zCard = parseFloat(form.z_card) || 0
-  const cardTip = parseFloat(form.card_tipping) || 0
   const totalPayouts = payouts.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const banking = zCash - totalPayouts
 
@@ -63,7 +61,7 @@ export default function RecordCashup() {
     return sum
   }, 0)
 
-  const gross = zCash + zCard + deliveryIncome + cardTip
+  const gross = zCash + zCard + deliveryIncome
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -71,14 +69,17 @@ export default function RecordCashup() {
     setLoading(true)
 
     const supabase = await createClient()
-    const trnDate = new Date(form.trn + 'T00:00:00')
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { router.push('/login'); return }
+
+    const trnStr = form.trn // already YYYY-MM-DD
+    const trnDate = new Date(trnStr + 'T00:00:00')
 
     const { error: cashupError } = await supabase.from('cashups').upsert({
       shop_id: shopId,
       trn: trnDate,
       z_cash: zCash,
       z_card: zCard,
-      card_tipping: cardTip,
       deliveroo: enabledServices.deliveroo ? (parseFloat(form.deliveroo) || 0) : 0,
       just_eat: enabledServices.just_eat ? (parseFloat(form.just_eat) || 0) : 0,
       tgtg: enabledServices.tgtg ? (parseFloat(form.tgtg) || 0) : 0,
@@ -90,17 +91,22 @@ export default function RecordCashup() {
       return
     }
 
+    // Replace payouts
+    await supabase.from('cashup_payouts').delete().eq('shop_id', shopId).eq('trn', trnStr)
     const validPayouts = payouts.filter(p => p.description.trim() && parseFloat(p.amount) > 0)
-    await supabase.from('cashup_payouts').delete().eq('shop_id', shopId).eq('trn', trnDate.toISOString().split('T')[0])
-
     if (validPayouts.length > 0) {
       const payoutRows = validPayouts.map(p => ({
         shop_id: shopId,
-        trn: trnDate.toISOString().split('T')[0],
+        trn: trnStr,
         description: p.description.trim(),
         amount: parseFloat(p.amount),
       }))
-      await supabase.from('cashup_payouts').insert(payoutRows)
+      const { error: payoutError } = await supabase.from('cashup_payouts').insert(payoutRows)
+      if (payoutError) {
+        setError(payoutError.message)
+        setLoading(false)
+        return
+      }
     }
 
     router.push(`/shops/${shopId}?tab=cashup`)
@@ -110,13 +116,15 @@ export default function RecordCashup() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b px-6 py-4">
         <div className="max-w-xl mx-auto">
-          <a href={`/shops/${shopId}?tab=cashup`} className="text-sm text-gray-500 hover:text-gray-700">← Back to Cashups</a>
+          <a href={`/shops/${shopId}?tab=cashup`} className="text-sm text-gray-500 hover:text-gray-700">← Back</a>
         </div>
       </header>
 
-      <main className="max-w-xl mx-auto p-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Record Cashup</h1>
-        <p className="text-gray-500 text-sm mb-6">Enter income and payouts for the day.</p>
+      <main className="max-w-xl mx-auto p-6 space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Record Cashup</h1>
+          <p className="text-gray-500 text-sm">Enter income and payouts for the day.</p>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
@@ -124,46 +132,36 @@ export default function RecordCashup() {
           )}
 
           {/* Date */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+          <div className="bg-white rounded-xl border p-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Date *</label>
             <input type="date" value={form.trn} onChange={e => update('trn', e.target.value)} required
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
           </div>
 
           {/* Income */}
-          <div className="bg-white rounded-xl border p-6 space-y-3">
+          <div className="bg-white rounded-xl border p-6 space-y-4">
             <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Income</h3>
 
-            {/* Zettle */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Zettle Cash (£)</label>
+                <label className="block text-xs text-gray-500 mb-1">Z Cash (£)</label>
                 <input type="number" step="0.01" min="0" value={form.z_cash}
                   onChange={e => update('z_cash', e.target.value)} placeholder="0.00"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Zettle Card (£)</label>
+                <label className="block text-xs text-gray-500 mb-1">Z Card (£)</label>
                 <input type="number" step="0.01" min="0" value={form.z_card}
                   onChange={e => update('z_card', e.target.value)} placeholder="0.00"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Card Tipping (£)</label>
-              <input type="number" step="0.01" min="0" value={form.card_tipping}
-                onChange={e => update('card_tipping', e.target.value)} placeholder="0.00"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-            </div>
-
-            <div className="border-t pt-3">
+            <div className="border-t pt-4">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Delivery Platforms</h4>
-                <button type="button" onClick={() => DELIVERY_SERVICES.forEach(s => {
-                  if (!enabledServices[s.key]) setEnabledServices(s2 => ({ ...s2, [s.key]: true }))
-                })}
-                  className="text-xs text-blue-600 hover:underline">+ Enable all</button>
+                <button type="button" onClick={() => setEnabledServices({ deliveroo: true, just_eat: true, tgtg: true })}
+                  className="text-xs text-blue-600 hover:underline">Enable all</button>
               </div>
 
               {DELIVERY_SERVICES.map(service => (
@@ -220,10 +218,10 @@ export default function RecordCashup() {
               ))}
             </div>
 
-            {payouts.length > 0 && totalPayouts > 0 && (
+            {totalPayouts > 0 && (
               <div className="bg-red-50 rounded-lg p-3 flex justify-between items-center">
                 <span className="text-sm text-red-700 font-medium">Total Payouts</span>
-                <span className="text-base font-bold text-red-900">£{totalPayouts.toFixed(2)}</span>
+                <span className="text-base font-bold text-red-900">-£{totalPayouts.toFixed(2)}</span>
               </div>
             )}
           </div>
@@ -232,7 +230,7 @@ export default function RecordCashup() {
           <div className="bg-white rounded-xl border p-6 space-y-2">
             <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Banking</h3>
             <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-sm text-gray-600">Zettle Cash</span>
+              <span className="text-sm text-gray-600">Z Cash</span>
               <span className="text-sm font-medium text-gray-800">£{zCash.toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-center py-2 border-b border-gray-100">
@@ -247,6 +245,7 @@ export default function RecordCashup() {
             </div>
           </div>
 
+          {/* Actions */}
           <div className="flex gap-3">
             <a href={`/shops/${shopId}?tab=cashup`}
               className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">

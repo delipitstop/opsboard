@@ -120,8 +120,8 @@ export default function CashupTab({ shopId }: { shopId: string }) {
               <thead className="bg-gray-50 border-b">
                 <tr>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">Cash</th>
-                  <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">Card</th>
+                  <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">Z</th>
+                  <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">Z Card</th>
                   <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">Deliveroo</th>
                   <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">Just Eat</th>
                   <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">TGTG</th>
