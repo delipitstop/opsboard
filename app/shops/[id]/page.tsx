@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import CashupTab from '@/components/shop/CashupTab'
 
 export default function ShopDetail() {
   const router = useRouter()
@@ -11,6 +12,12 @@ export default function ShopDetail() {
   const [shop, setShop] = useState<any>(null)
   const [workers, setWorkers] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<'overview' | 'staff' | 'rota' | 'cashup'>('overview')
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tab = params.get('tab') as 'overview' | 'staff' | 'rota' | 'cashup'
+    if (tab && ['overview', 'staff', 'rota', 'cashup'].includes(tab)) setActiveTab(tab)
+  }, [])
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
 
@@ -186,20 +193,7 @@ export default function ShopDetail() {
 
         {/* Cashup Tab */}
         {activeTab === 'cashup' && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-900">Cashups</h2>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-                + Record Cashup
-              </button>
-            </div>
-            <div className="bg-white rounded-xl border p-8 text-center">
-              <p className="text-gray-500">No cashups recorded yet.</p>
-              <button className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-                + Record First Cashup
-              </button>
-            </div>
-          </div>
+          <CashupTab shopId={shopId} />
         )}
       </main>
     </div>

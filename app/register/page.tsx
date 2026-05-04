@@ -48,6 +48,20 @@ export default function Register() {
       return
     }
 
+    // Create the user record (links auth user to the business)
+    const { error: userError } = await supabase.from('users').insert({
+      id: authData.user.id,
+      business_id: authData.user.id,
+      name: form.businessName,
+      role: 'owner',
+    })
+
+    if (userError) {
+      setError(`Account created but user setup failed: ${userError.message}`)
+      setLoading(false)
+      return
+    }
+
     // Create the first shop
     const { error: shopError } = await supabase.from('shops').insert({
       business_id: authData.user.id,
