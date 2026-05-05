@@ -157,10 +157,11 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
                 const ps = payouts[c.trn] || []
                 const payoutTotal = ps.reduce((s: number, p: any) => s + (parseFloat(p.amount) || 0), 0)
                 const banking = (parseFloat(c.z_cash) || 0) - payoutTotal
-                const d = new Date(c.trn + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                const [y, m, d] = (c.trn as string).split('-').map(Number)
+                const displayDate = new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
                 return (
                   <tr key={c.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-3 text-sm font-medium text-gray-900">{d}</td>
+                    <td className="px-3 py-3 text-sm font-medium text-gray-900">{displayDate}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.z_cash) || 0).toFixed(2)}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.z_card) || 0).toFixed(2)}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.deliveroo) || 0).toFixed(2)}</td>

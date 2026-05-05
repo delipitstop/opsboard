@@ -72,12 +72,11 @@ export default function RecordCashup() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    const trnStr = form.trn // already YYYY-MM-DD
-    const trnDate = new Date(trnStr + 'T00:00:00')
+    const trnStr = form.trn // YYYY-MM-DD — pass as string to avoid JS Date timezone shift
 
     const { error: cashupError } = await supabase.from('cashups').upsert({
       shop_id: shopId,
-      trn: trnDate,
+      trn: trnStr,
       z_cash: zCash,
       z_card: zCard,
       deliveroo: enabledServices.deliveroo ? (parseFloat(form.deliveroo) || 0) : 0,
