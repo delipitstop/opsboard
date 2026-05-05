@@ -3,50 +3,58 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-function getWeekStart(d: Date): string {
-  const y = d.getFullYear()
-  const m = d.getMonth()
-  const day = d.getDate()
-  const dow = new Date(y, m, day).getDay()
+function today(): string {
+  const d = new Date()
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
+
+function getWeekStart(weekStr: string): string {
+  const [y, m, d] = weekStr.split('-').map(Number)
+  const dow = new Date(y, m - 1, d).getDay()
   const diff = dow === 0 ? -6 : 1 - dow
-  const monday = new Date(y, m, day + diff)
+  const monday = new Date(y, m - 1, d + diff)
   return monday.getFullYear() + '-' + String(monday.getMonth() + 1).padStart(2, '0') + '-' + String(monday.getDate()).padStart(2, '0')
 }
 
-function prevWeek(weekStr: string): string {
-  const [y, m, d] = weekStr.split('-').map(Number)
+function prevWeek(ws: string): string {
+  const [y, m, d] = ws.split('-').map(Number)
   const prev = new Date(y, m - 1, d - 7)
   return prev.getFullYear() + '-' + String(prev.getMonth() + 1).padStart(2, '0') + '-' + String(prev.getDate()).padStart(2, '0')
 }
 
-function nextWeek(weekStr: string): string {
-  const [y, m, d] = weekStr.split('-').map(Number)
+function nextWeek(ws: string): string {
+  const [y, m, d] = ws.split('-').map(Number)
   const next = new Date(y, m - 1, d + 7)
   return next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0') + '-' + String(next.getDate()).padStart(2, '0')
 }
 
-function fmtDate(weekStr: string): { start: string; end: string } {
-  const [y, m, d] = weekStr.split('-').map(Number)
-  const start = String(d).padStart(2, '0') + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1]
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function fmtWeek(ws: string): { start: string; end: string } {
+  const [y, m, d] = ws.split('-').map(Number)
+  const start = String(d).padStart(2, '0') + ' ' + MONTHS[m - 1]
   const endDate = new Date(y, m - 1, d + 6)
-  const end = String(endDate.getDate()).padStart(2, '0') + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][endDate.getMonth()]
+  const end = String(endDate.getDate()).padStart(2, '0') + ' ' + MONTHS[endDate.getMonth()]
   return { start, end }
 }
 
-function fmtDisplayDate(weekStr: string): string {
-  const [y, m, d] = weekStr.split('-').map(Number)
-  return String(d).padStart(2, '0') + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1]
+function fmtDisplayDate(trn: string): string {
+  const [y, m, d] = trn.split('-').map(Number)
+  return String(d).padStart(2, '0') + ' ' + MONTHS[m - 1]
 }
 
 export default function CashupTab({ shopId, refreshKey }: { shopId: string; refreshKey?: number }) {
   const [cashups, setCashups] = useState<any[]>([])
   const [payouts, setPayouts] = useState<Record<string, any[]>>({})
-  const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()))
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(today()))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const weekEnd = new Date(weekStart + 'T00:00:00')
-  weekEnd.setDate(weekEnd.getDate() + 6)
+  const weekEnd = (() => {
+    const [y, m, d] = weekStart.split('-').map(Number)
+    const e = new Date(y, m - 1, d + 6)
+    return e.getFullYear() + '-' + String(e.getMonth() + 1).padStart(2, '0') + '-' + String(e.getDate()).padStart(2, '0')
+  })()
 
   useEffect(() => {
     async function load() {
@@ -54,9 +62,9 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
       setError('')
       const supabase = await createClient()
 
-      const end = new Date(weekStart + 'T00:00:00')
-      end.setDate(end.getDate() + 7)
-      const endStr = end.toISOString().split('T')[0]
+      const [y, m, d] = weekStart.split('-').map(Number)
+      const endDate = new Date(y, m - 1, d + 7)
+      const endStr = endDate.getFullYear() + '-' + String(endDate.getMonth() + 1).padStart(2, '0') + '-' + String(endDate.getDate()).padStart(2, '0')
 
       const { data, error: err } = await supabase
         .from('cashups')
@@ -114,6 +122,9 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
   if (loading) return <div className="text-center text-gray-500 py-8">Loading...</div>
   if (error) return <div className="p-4 bg-red-50 text-red-700 rounded-lg text-sm">Error: {error}</div>
 
+  const weekDisplay = fmtWeek(weekStart)
+  const endDisplay = fmtWeek(weekEnd)
+
   return (
     <div className="space-y-4">
       {/* Week Navigator */}
@@ -124,8 +135,8 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
         </button>
         <div className="text-center">
           <p className="text-xs text-gray-400 uppercase tracking-wide">Week Commencing</p>
-          <p className="text-base font-bold text-gray-900">{fmtDate(weekStart).start}</p>
-          <p className="text-xs text-gray-400">– {fmtDate(weekStart).end}</p>
+          <p className="text-base font-bold text-gray-900">{weekDisplay.start}</p>
+          <p className="text-xs text-gray-400">– {weekDisplay.end}</p>
         </div>
         <button onClick={() => setWeekStart(nextWeek(weekStart))}
           className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">
@@ -168,11 +179,9 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
                 const ps = payouts[c.trn] || []
                 const payoutTotal = ps.reduce((s: number, p: any) => s + (parseFloat(p.amount) || 0), 0)
                 const banking = (parseFloat(c.z_cash) || 0) - payoutTotal
-                const [y, m, d] = (c.trn as string).split('-').map(Number)
-                const displayDate = new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
                 return (
                   <tr key={c.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-3 text-sm font-medium text-gray-900">{displayDate}</td>
+                    <td className="px-3 py-3 text-sm font-medium text-gray-900">{fmtDisplayDate(c.trn)}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.z_cash) || 0).toFixed(2)}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.z_card) || 0).toFixed(2)}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.deliveroo) || 0).toFixed(2)}</td>
