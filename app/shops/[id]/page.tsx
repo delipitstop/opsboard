@@ -13,6 +13,7 @@ export default function ShopDetail() {
   const [shop, setShop] = useState<any>(null)
   const [workers, setWorkers] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<'overview' | 'staff' | 'rota' | 'cashup'>('overview')
+  const [cashupRefresh, setCashupRefresh] = useState(0)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -145,7 +146,7 @@ export default function ShopDetail() {
 
         {/* Cashup Tab */}
         {activeTab === 'cashup' && (
-          <CashupTab shopId={shopId} />
+          <CashupTab shopId={shopId} refreshKey={cashupRefresh} />
         )}
       </main>
     </div>

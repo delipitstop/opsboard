@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter, useParams, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 type Payout = { description: string; amount: string }
@@ -109,7 +109,7 @@ export default function RecordCashup() {
       }
     }
 
-    router.push(`/shops/${shopId}?tab=cashup`)
+    window.location.href = `/shops/${shopId}?tab=cashup`
   }
 
   return (

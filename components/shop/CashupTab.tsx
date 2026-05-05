@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 function getWeekStart(d: Date): string {
@@ -28,81 +27,64 @@ function fmtDate(d: Date) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export default function CashupTab({ shopId }: { shopId: string }) {
-  const router = useRouter()
-  const searchParams = useSearchParams()
+export default function CashupTab({ shopId, refreshKey }: { shopId: string; refreshKey?: number }) {
   const [cashups, setCashups] = useState<any[]>([])
   const [payouts, setPayouts] = useState<Record<string, any[]>>({})
-  const [weekStart, setWeekStart] = useState(() => {
-    const fromUrl = searchParams.get('week')
-    return fromUrl || getWeekStart(new Date())
-  })
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [refreshCount, setRefreshCount] = useState(0)
 
   const weekEnd = new Date(weekStart + 'T00:00:00')
   weekEnd.setDate(weekEnd.getDate() + 6)
 
-  // Re-fetch when returning from cashup/new page
   useEffect(() => {
-    const handleRouteChange = () => {
-      setRefreshCount(c => c + 1)
-    }
-    router.events?.on('routeChangeComplete', handleRouteChange)
-    return () => router.events?.off('routeChangeComplete', handleRouteChange)
-  }, [router])
+    async function load() {
+      setLoading(true)
+      setError('')
+      const supabase = await createClient()
 
-  // Also re-fetch if weekStart changes
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    const supabase = await createClient()
+      const end = new Date(weekStart + 'T00:00:00')
+      end.setDate(end.getDate() + 7)
+      const endStr = end.toISOString().split('T')[0]
 
-    const end = new Date(weekStart + 'T00:00:00')
-    end.setDate(end.getDate() + 7)
-    const endStr = end.toISOString().split('T')[0]
-
-    const { data, error: err } = await supabase
-      .from('cashups')
-      .select('id, trn, z_cash, z_card, deliveroo, just_eat, tgtg')
-      .eq('shop_id', shopId)
-      .gte('trn', weekStart)
-      .lt('trn', endStr)
-      .order('trn', { ascending: true })
-
-    if (err) {
-      setError(err.message)
-      setLoading(false)
-      return
-    }
-
-    setCashups(data || [])
-
-    if (data && data.length > 0) {
-      const trnDates = data.map((c: any) => c.trn)
-      const { data: payoutRows } = await supabase
-        .from('cashup_payouts')
-        .select('trn, description, amount')
+      const { data, error: err } = await supabase
+        .from('cashups')
+        .select('id, trn, z_cash, z_card, deliveroo, just_eat, tgtg')
         .eq('shop_id', shopId)
-        .in('trn', trnDates)
+        .gte('trn', weekStart)
+        .lt('trn', endStr)
+        .order('trn', { ascending: true })
 
-      const payoutMap: Record<string, any[]> = {}
-      ;(payoutRows || []).forEach((p: any) => {
-        if (!payoutMap[p.trn]) payoutMap[p.trn] = []
-        payoutMap[p.trn].push(p)
-      })
-      setPayouts(payoutMap)
-    } else {
-      setPayouts({})
+      if (err) {
+        setError(err.message)
+        setLoading(false)
+        return
+      }
+
+      setCashups(data || [])
+
+      if (data && data.length > 0) {
+        const trnDates = data.map((c: any) => c.trn)
+        const { data: payoutRows } = await supabase
+          .from('cashup_payouts')
+          .select('trn, description, amount')
+          .eq('shop_id', shopId)
+          .in('trn', trnDates)
+
+        const payoutMap: Record<string, any[]> = {}
+        ;(payoutRows || []).forEach((p: any) => {
+          if (!payoutMap[p.trn]) payoutMap[p.trn] = []
+          payoutMap[p.trn].push(p)
+        })
+        setPayouts(payoutMap)
+      } else {
+        setPayouts({})
+      }
+
+      setLoading(false)
     }
-
-    setLoading(false)
-  }, [shopId, weekStart])
-
-  useEffect(() => {
     load()
-  }, [load, refreshCount])
+  }, [shopId, weekStart, refreshKey])
 
   const totals = cashups.reduce((acc, c) => {
     const ps = payouts[c.trn] || []
