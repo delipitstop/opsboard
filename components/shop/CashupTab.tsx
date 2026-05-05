@@ -4,27 +4,38 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 function getWeekStart(d: Date): string {
-  const date = new Date(d)
-  const day = date.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  date.setDate(date.getDate() + diff)
-  return date.toISOString().split('T')[0]
+  const y = d.getFullYear()
+  const m = d.getMonth()
+  const day = d.getDate()
+  const dow = new Date(y, m, day).getDay()
+  const diff = dow === 0 ? -6 : 1 - dow
+  const monday = new Date(y, m, day + diff)
+  return monday.getFullYear() + '-' + String(monday.getMonth() + 1).padStart(2, '0') + '-' + String(monday.getDate()).padStart(2, '0')
 }
 
 function prevWeek(weekStr: string): string {
-  const d = new Date(weekStr + 'T00:00:00')
-  d.setDate(d.getDate() - 7)
-  return d.toISOString().split('T')[0]
+  const [y, m, d] = weekStr.split('-').map(Number)
+  const prev = new Date(y, m - 1, d - 7)
+  return prev.getFullYear() + '-' + String(prev.getMonth() + 1).padStart(2, '0') + '-' + String(prev.getDate()).padStart(2, '0')
 }
 
 function nextWeek(weekStr: string): string {
-  const d = new Date(weekStr + 'T00:00:00')
-  d.setDate(d.getDate() + 7)
-  return d.toISOString().split('T')[0]
+  const [y, m, d] = weekStr.split('-').map(Number)
+  const next = new Date(y, m - 1, d + 7)
+  return next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0') + '-' + String(next.getDate()).padStart(2, '0')
 }
 
-function fmtDate(d: Date) {
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+function fmtDate(weekStr: string): { start: string; end: string } {
+  const [y, m, d] = weekStr.split('-').map(Number)
+  const start = String(d).padStart(2, '0') + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1]
+  const endDate = new Date(y, m - 1, d + 6)
+  const end = String(endDate.getDate()).padStart(2, '0') + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][endDate.getMonth()]
+  return { start, end }
+}
+
+function fmtDisplayDate(weekStr: string): string {
+  const [y, m, d] = weekStr.split('-').map(Number)
+  return String(d).padStart(2, '0') + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1]
 }
 
 export default function CashupTab({ shopId, refreshKey }: { shopId: string; refreshKey?: number }) {
@@ -113,8 +124,8 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
         </button>
         <div className="text-center">
           <p className="text-xs text-gray-400 uppercase tracking-wide">Week Commencing</p>
-          <p className="text-base font-bold text-gray-900">{fmtDate(new Date(weekStart + 'T00:00:00'))}</p>
-          <p className="text-xs text-gray-400">– {fmtDate(weekEnd)}</p>
+          <p className="text-base font-bold text-gray-900">{fmtDate(weekStart).start}</p>
+          <p className="text-xs text-gray-400">– {fmtDate(weekStart).end}</p>
         </div>
         <button onClick={() => setWeekStart(nextWeek(weekStart))}
           className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">

@@ -20,7 +20,7 @@ export default function RecordCashup() {
   const today = new Date().toISOString().split('T')[0]
 
   const [form, setForm] = useState({
-    trn: searchParams.get('week') || today,
+    trn: today,
     z_cash: '',
     z_card: '',
     deliveroo: '',
