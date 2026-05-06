@@ -1,15 +1,65 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useParams, useSearchParams } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import CashupTab from '@/components/shop/CashupTab'
 import StaffTab from '@/components/shop/StaffTab'
+
+// ─── Date helpers (pure integer math, no timezone issues) ───────────────────
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function parseYMD(ws: string): [number, number, number] {
+  const [y, m, d] = ws.split('-').map(Number)
+  return [y, m, d]
+}
+
+function fmt(y: number, m: number, d: number): string {
+  return String(d).padStart(2, '0') + ' ' + MONTHS[m - 1]
+}
+
+function getWeekStart(ws: string): string {
+  const [y, m, d] = parseYMD(ws)
+  const dow = new Date(y, m - 1, d).getDay()
+  const diff = dow === 0 ? -6 : 1 - dow
+  const monday = new Date(y, m - 1, d + diff)
+  return String(monday.getFullYear()) + '-' +
+    String(monday.getMonth() + 1).padStart(2, '0') + '-' +
+    String(monday.getDate()).padStart(2, '0')
+}
+
+function addWeeks(ws: string, n: number): string {
+  const [y, m, d] = parseYMD(ws)
+  const result = new Date(y, m - 1, d + n * 7)
+  return String(result.getFullYear()) + '-' +
+    String(result.getMonth() + 1).padStart(2, '0') + '-' +
+    String(result.getDate()).padStart(2, '0')
+}
+
+function fmtWeekRange(ws: string): { start: string; end: string } {
+  const [y, m, d] = parseYMD(ws)
+  const endDate = new Date(y, m - 1, d + 6)
+  return {
+    start: fmt(y, m, d),
+    end: fmt(endDate.getFullYear(), endDate.getMonth() + 1, endDate.getDate()),
+  }
+}
+
+function today(): string {
+  const d = new Date()
+  return String(d.getFullYear()) + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0')
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ShopDetail() {
   const router = useRouter()
   const params = useParams()
   const shopId = params.id as string
+
   const [shop, setShop] = useState<any>(null)
   const [workers, setWorkers] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<'overview' | 'staff' | 'rota' | 'cashup'>('overview')

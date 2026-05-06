@@ -7,29 +7,25 @@ import { createClient } from '@/lib/supabase/client'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-/** Parse YYYY-MM-DD string into [y, m, d] numbers */
 function parseYMD(ws: string): [number, number, number] {
   const [y, m, d] = ws.split('-').map(Number)
   return [y, m, d]
 }
 
-/** Format [y, m, d] as "DD Mon" */
 function fmt(y: number, m: number, d: number): string {
   return String(d).padStart(2, '0') + ' ' + MONTHS[m - 1]
 }
 
-/** Given any date, return the Monday of that week as YYYY-MM-DD */
 function getWeekStart(ws: string): string {
   const [y, m, d] = parseYMD(ws)
-  const dow = new Date(y, m - 1, d).getDay() // 0=Sun..6=Sat
-  const diff = dow === 0 ? -6 : 1 - dow       // days to Mon
+  const dow = new Date(y, m - 1, d).getDay()
+  const diff = dow === 0 ? -6 : 1 - dow
   const monday = new Date(y, m - 1, d + diff)
   return String(monday.getFullYear()) + '-' +
     String(monday.getMonth() + 1).padStart(2, '0') + '-' +
     String(monday.getDate()).padStart(2, '0')
 }
 
-/** Monday + N weeks, returns YYYY-MM-DD */
 function addWeeks(ws: string, n: number): string {
   const [y, m, d] = parseYMD(ws)
   const result = new Date(y, m - 1, d + n * 7)
@@ -38,10 +34,8 @@ function addWeeks(ws: string, n: number): string {
     String(result.getDate()).padStart(2, '0')
 }
 
-/** Format a week start YYYY-MM-DD as "DD Mon - DD Mon" */
 function fmtWeekRange(ws: string): { start: string; end: string } {
   const [y, m, d] = parseYMD(ws)
-  // Use Date object for end-of-week so day overflow wraps correctly (e.g. 33 Apr → 03 May)
   const endDate = new Date(y, m - 1, d + 6)
   return {
     start: fmt(y, m, d),
@@ -49,26 +43,47 @@ function fmtWeekRange(ws: string): { start: string; end: string } {
   }
 }
 
-/** Format a cashup trn YYYY-MM-DD as "DD Mon" */
 function fmtDisplayDate(trn: string): string {
   const [y, m, d] = parseYMD(trn)
   return fmt(y, m, d)
 }
 
+function today(): string {
+  const d = new Date()
+  return String(d.getFullYear()) + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0')
+}
+
+function getStoredWeekStart(): string {
+  if (typeof window === 'undefined') return getWeekStart(today())
+  try {
+    const stored = sessionStorage.getItem('opsboard_cashup_week')
+    if (stored) return stored
+  } catch {}
+  return getWeekStart(today())
+}
+
+function storeWeekStart(ws: string) {
+  try { sessionStorage.setItem('opsboard_cashup_week', ws) } catch {}
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CashupTab({ shopId, refreshKey }: { shopId: string; refreshKey?: number }) {
-  const today = String(new Date().getFullYear()) + '-' +
-    String(new Date().getMonth() + 1).padStart(2, '0') + '-' +
-    String(new Date().getDate()).padStart(2, '0')
-
   const [cashups, setCashups] = useState<any[]>([])
   const [payouts, setPayouts] = useState<Record<string, any[]>>({})
-  const [weekStart, setWeekStart] = useState(() => getWeekStart(today))
+  // ── Week state: init from sessionStorage (persists across page navigations) ──
+  const [weekStart, setWeekStart] = useState(() => getStoredWeekStart())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const weekRange = fmtWeekRange(weekStart)
+
+  // Persist week to sessionStorage whenever it changes
+  useEffect(() => {
+    storeWeekStart(weekStart)
+  }, [weekStart])
 
   useEffect(() => {
     async function load() {
@@ -76,10 +91,8 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
       setError('')
       const supabase = await createClient()
 
-      // Build start..end as YYYY-MM-DD strings
       const start = weekStart
       const endDate = addWeeks(weekStart, 1)
-      // Supabase gte/lt on DATE column — use string comparison
       const { data, error: err } = await supabase
         .from('cashups')
         .select('id, trn, z_cash, z_card, deliveroo, just_eat, tgtg')
