@@ -41,9 +41,11 @@ function addWeeks(ws: string, n: number): string {
 /** Format a week start YYYY-MM-DD as "DD Mon - DD Mon" */
 function fmtWeekRange(ws: string): { start: string; end: string } {
   const [y, m, d] = parseYMD(ws)
+  // Use Date object for end-of-week so day overflow wraps correctly (e.g. 33 Apr → 03 May)
+  const endDate = new Date(y, m - 1, d + 6)
   return {
     start: fmt(y, m, d),
-    end: fmt(y, m, d + 6),
+    end: fmt(endDate.getFullYear(), endDate.getMonth() + 1, endDate.getDate()),
   }
 }
 
