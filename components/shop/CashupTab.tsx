@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── Date helpers ────────────────────────────────────────────────────────────
@@ -48,34 +48,39 @@ function today(): string {
     String(d.getDate()).padStart(2, '0')
 }
 
+// Read week directly from browser URL — bypasses Next.js routing entirely
+function getWeekFromBrowser(): string {
+  if (typeof window === 'undefined') return getWeekStart(today())
+  const params = new URLSearchParams(window.location.search)
+  const wp = params.get('week')
+  return (wp && /^\d{4}-\d{2}-\d{2}$/.test(wp)) ? wp : getWeekStart(today())
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function CashupTab({ shopId, refreshKey }: { shopId: string; refreshKey?: number }) {
-  const searchParams = useSearchParams()
   const router = useRouter()
 
-  // Use URL param if valid, otherwise default to current week
-  // This is read from URL on every render — no staleness possible
-  const weekParam = searchParams.get('week')
-  const weekStart = (weekParam && /^\d{4}-\d{2}-\d{2}$/.test(weekParam))
-    ? weekParam
-    : getWeekStart(today())
-
+  const [weekStart, setWeekStart] = useState<string>('')
   const [cashups, setCashups] = useState<any[]>([])
   const [payouts, setPayouts] = useState<Record<string, any[]>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // Navigate to a specific week
+  // Read initial week from browser URL on mount
+  useEffect(() => {
+    setWeekStart(getWeekFromBrowser())
+  }, [])
+
   function navigateToWeek(ws: string) {
     const url = new URL(window.location.href)
     url.searchParams.set('week', ws)
-    // Preserve tab=cashup
     url.searchParams.set('tab', 'cashup')
     router.push(url.pathname + '?' + url.searchParams.toString())
   }
 
   useEffect(() => {
+    if (!weekStart) return
     async function load() {
       setLoading(true)
       setError('')
@@ -127,28 +132,24 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
     }
   }, { z_cash: 0, z_card: 0, deliveroo: 0, just_eat: 0, tgtg: 0, payouts: 0, banking: 0 })
 
-  if (loading) return <div className="text-center text-gray-500 py-8">Loading...</div>
+  if (loading || !weekStart) return <div className="text-center text-gray-500 py-8">Loading...</div>
   if (error) return <div className="p-4 bg-red-50 text-red-700 rounded-lg text-sm">Error: {error}</div>
+
+  const range = fmtRange(weekStart)
 
   return (
     <div className="space-y-4">
       {/* Week Navigator */}
       <div className="flex items-center justify-between">
-        <button
-          onClick={() => navigateToWeek(addWeeks(weekStart, -1))}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">
-          ← Prev
-        </button>
+        <button onClick={() => navigateToWeek(addWeeks(weekStart, -1))}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">← Prev</button>
         <div className="text-center">
           <p className="text-xs text-gray-400 uppercase tracking-wide">Week Commencing</p>
-          <p className="text-base font-bold text-gray-900">{fmtRange(weekStart).start}</p>
-          <p className="text-xs text-gray-400">– {fmtRange(weekStart).end}</p>
+          <p className="text-base font-bold text-gray-900">{range.start}</p>
+          <p className="text-xs text-gray-400">– {range.end}</p>
         </div>
-        <button
-          onClick={() => navigateToWeek(addWeeks(weekStart, 1))}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">
-          Next →
-        </button>
+        <button onClick={() => navigateToWeek(addWeeks(weekStart, 1))}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">Next →</button>
       </div>
 
       {/* Record Cashup */}
