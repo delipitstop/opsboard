@@ -108,7 +108,7 @@ export default function RecordCashup() {
       }
     }
 
-    window.location.href = `/shops/${shopId}?tab=cashup`
+    window.location.href = `/shops/${shopId}?tab=cashup&date=${trnStr}`
   }
 
   return (
