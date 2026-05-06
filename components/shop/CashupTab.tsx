@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter, useParams, useSearchParams } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── Date helpers — pure integer math, no timezone issues ───────────────────
@@ -59,8 +59,7 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  // ── Read week ONLY from URL — this is the single source of truth ──────────
-  // Computed fresh on every render from the URL, no stale state possible
+  // Week is read directly from the URL on every render — no stale state
   const weekParam = searchParams.get('week')
   const weekStart = (weekParam && /^\d{4}-\d{2}-\d{2}$/.test(weekParam))
     ? weekParam
@@ -73,7 +72,6 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
 
   const range = fmtRange(weekStart)
 
-  // Navigate to a new week — full page load ensures clean state
   function navigate(ws: string) {
     const url = new URL(window.location.href)
     url.searchParams.set('week', ws)
