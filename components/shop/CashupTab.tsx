@@ -1,14 +1,15 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-// ─── Date helpers (pure integer math, no timezone issues) ───────────────────
+// ─── Date helpers — pure integer math, no timezone issues ───────────────────
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-function parseYMD(ws: string): [number, number, number] {
-  const [y, m, d] = ws.split('-').map(Number)
+function parseYMD(s: string): [number, number, number] {
+  const [y, m, d] = s.split('-').map(Number)
   return [y, m, d]
 }
 
@@ -16,34 +17,31 @@ function fmt(y: number, m: number, d: number): string {
   return String(d).padStart(2, '0') + ' ' + MONTHS[m - 1]
 }
 
-function getWeekStart(ws: string): string {
-  const [y, m, d] = parseYMD(ws)
+function getWeekStart(s: string): string {
+  const [y, m, d] = parseYMD(s)
   const dow = new Date(y, m - 1, d).getDay()
   const diff = dow === 0 ? -6 : 1 - dow
-  const monday = new Date(y, m - 1, d + diff)
-  return String(monday.getFullYear()) + '-' +
-    String(monday.getMonth() + 1).padStart(2, '0') + '-' +
-    String(monday.getDate()).padStart(2, '0')
+  const mon = new Date(y, m - 1, d + diff)
+  return String(mon.getFullYear()) + '-' +
+    String(mon.getMonth() + 1).padStart(2, '0') + '-' +
+    String(mon.getDate()).padStart(2, '0')
 }
 
-function addWeeks(ws: string, n: number): string {
+function addWeeks(s: string, n: number): string {
+  const [y, m, d] = parseYMD(s)
+  const r = new Date(y, m - 1, d + n * 7)
+  return String(r.getFullYear()) + '-' +
+    String(r.getMonth() + 1).padStart(2, '0') + '-' +
+    String(r.getDate()).padStart(2, '0')
+}
+
+function fmtRange(ws: string) {
   const [y, m, d] = parseYMD(ws)
-  const result = new Date(y, m - 1, d + n * 7)
-  return String(result.getFullYear()) + '-' +
-    String(result.getMonth() + 1).padStart(2, '0') + '-' +
-    String(result.getDate()).padStart(2, '0')
+  const end = new Date(y, m - 1, d + 6)
+  return { start: fmt(y, m, d), end: fmt(end.getFullYear(), end.getMonth() + 1, end.getDate()) }
 }
 
-function fmtWeekRange(ws: string): { start: string; end: string } {
-  const [y, m, d] = parseYMD(ws)
-  const endDate = new Date(y, m - 1, d + 6)
-  return {
-    start: fmt(y, m, d),
-    end: fmt(endDate.getFullYear(), endDate.getMonth() + 1, endDate.getDate()),
-  }
-}
-
-function fmtDisplayDate(trn: string): string {
+function fmtDate(trn: string): string {
   const [y, m, d] = parseYMD(trn)
   return fmt(y, m, d)
 }
@@ -55,41 +53,32 @@ function today(): string {
     String(d.getDate()).padStart(2, '0')
 }
 
-function getStoredWeekStart(): string {
-  if (typeof window === 'undefined') return getWeekStart(today())
-  try {
-    // URL ?date param takes priority (set by cashup form redirect)
-    const params = new URLSearchParams(window.location.search)
-    const dateParam = params.get('date')
-    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
-      return getWeekStart(dateParam)
-    }
-    const stored = sessionStorage.getItem('opsboard_cashup_week')
-    if (stored) return stored
-  } catch {}
-  return getWeekStart(today())
-}
-
-function storeWeekStart(ws: string) {
-  try { sessionStorage.setItem('opsboard_cashup_week', ws) } catch {}
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CashupTab({ shopId, refreshKey }: { shopId: string; refreshKey?: number }) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Read week from URL ?week= param — default to today
+  const weekParam = searchParams.get('week')
+  const initial = weekParam && /^\d{4}-\d{2}-\d{2}$/.test(weekParam)
+    ? weekParam
+    : getWeekStart(today())
+
+  const [weekStart, setWeekStart] = useState(initial)
   const [cashups, setCashups] = useState<any[]>([])
   const [payouts, setPayouts] = useState<Record<string, any[]>>({})
-  // ── Week state: init from sessionStorage (persists across page navigations) ──
-  const [weekStart, setWeekStart] = useState(() => getStoredWeekStart())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const weekRange = fmtWeekRange(weekStart)
+  const range = fmtRange(weekStart)
 
-  // Persist week to sessionStorage whenever it changes
-  useEffect(() => {
-    storeWeekStart(weekStart)
-  }, [weekStart])
+  function navigate(ws: string) {
+    setWeekStart(ws)
+    const url = new URL(window.location.href)
+    url.searchParams.set('week', ws)
+    router.push(url.path + '?' + url.searchParams.toString(), { scroll: false })
+  }
 
   useEffect(() => {
     async function load() {
@@ -97,38 +86,32 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
       setError('')
       const supabase = await createClient()
 
-      const start = weekStart
-      const endDate = addWeeks(weekStart, 1)
+      const end = addWeeks(weekStart, 1)
       const { data, error: err } = await supabase
         .from('cashups')
         .select('id, trn, z_cash, z_card, deliveroo, just_eat, tgtg')
         .eq('shop_id', shopId)
-        .gte('trn', start)
-        .lt('trn', endDate)
+        .gte('trn', weekStart)
+        .lt('trn', end)
         .order('trn', { ascending: true })
 
-      if (err) {
-        setError(err.message)
-        setLoading(false)
-        return
-      }
+      if (err) { setError(err.message); setLoading(false); return }
 
       setCashups(data || [])
 
       if (data && data.length > 0) {
-        const trnDates = data.map((c: any) => c.trn)
-        const { data: payoutRows } = await supabase
+        const { data: rows } = await supabase
           .from('cashup_payouts')
           .select('trn, description, amount')
           .eq('shop_id', shopId)
-          .in('trn', trnDates)
+          .in('trn', data.map((c: any) => c.trn))
 
-        const payoutMap: Record<string, any[]> = {}
-        ;(payoutRows || []).forEach((p: any) => {
-          if (!payoutMap[p.trn]) payoutMap[p.trn] = []
-          payoutMap[p.trn].push(p)
+        const map: Record<string, any[]> = {}
+        ;(rows || []).forEach((p: any) => {
+          if (!map[p.trn]) map[p.trn] = []
+          map[p.trn].push(p)
         })
-        setPayouts(payoutMap)
+        setPayouts(map)
       } else {
         setPayouts({})
       }
@@ -140,15 +123,15 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
 
   const totals = cashups.reduce((acc, c) => {
     const ps = payouts[c.trn] || []
-    const payoutTotal = ps.reduce((s: number, p: any) => s + (parseFloat(p.amount) || 0), 0)
+    const pt = ps.reduce((s: number, p: any) => s + (parseFloat(p.amount) || 0), 0)
     return {
       z_cash: acc.z_cash + (parseFloat(c.z_cash) || 0),
       z_card: acc.z_card + (parseFloat(c.z_card) || 0),
       deliveroo: acc.deliveroo + (parseFloat(c.deliveroo) || 0),
       just_eat: acc.just_eat + (parseFloat(c.just_eat) || 0),
       tgtg: acc.tgtg + (parseFloat(c.tgtg) || 0),
-      payouts: acc.payouts + payoutTotal,
-      banking: acc.banking + (parseFloat(c.z_cash) || 0) - payoutTotal,
+      payouts: acc.payouts + pt,
+      banking: acc.banking + (parseFloat(c.z_cash) || 0) - pt,
     }
   }, { z_cash: 0, z_card: 0, deliveroo: 0, just_eat: 0, tgtg: 0, payouts: 0, banking: 0 })
 
@@ -159,27 +142,20 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
     <div className="space-y-4">
       {/* Week Navigator */}
       <div className="flex items-center justify-between">
-        <button
-          onClick={() => setWeekStart(addWeeks(weekStart, -1))}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">
-          ← Prev
-        </button>
+        <button onClick={() => navigate(addWeeks(weekStart, -1))}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">← Prev</button>
         <div className="text-center">
           <p className="text-xs text-gray-400 uppercase tracking-wide">Week Commencing</p>
-          <p className="text-base font-bold text-gray-900">{weekRange.start}</p>
-          <p className="text-xs text-gray-400">– {weekRange.end}</p>
+          <p className="text-base font-bold text-gray-900">{range.start}</p>
+          <p className="text-xs text-gray-400">– {range.end}</p>
         </div>
-        <button
-          onClick={() => setWeekStart(addWeeks(weekStart, 1))}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">
-          Next →
-        </button>
+        <button onClick={() => navigate(addWeeks(weekStart, 1))}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">Next →</button>
       </div>
 
       {/* Record Cashup */}
       <div className="flex justify-end">
-        <a
-          href={`/shops/${shopId}/cashup/new?date=${weekStart}`}
+        <a href={`/shops/${shopId}/cashup/new?date=${weekStart}`}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
           + Record Cashup
         </a>
@@ -189,8 +165,7 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
       {cashups.length === 0 && (
         <div className="bg-white rounded-xl border p-8 text-center">
           <p className="text-gray-500 mb-4">No cashups for this week.</p>
-          <a
-            href={`/shops/${shopId}/cashup/new?date=${weekStart}`}
+          <a href={`/shops/${shopId}/cashup/new?date=${weekStart}`}
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
             + Record Cashup
           </a>
@@ -211,17 +186,17 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
             <tbody className="divide-y">
               {cashups.map((c: any) => {
                 const ps = payouts[c.trn] || []
-                const payoutTotal = ps.reduce((s: number, p: any) => s + (parseFloat(p.amount) || 0), 0)
-                const banking = (parseFloat(c.z_cash) || 0) - payoutTotal
+                const pt = ps.reduce((s: number, p: any) => s + (parseFloat(p.amount) || 0), 0)
+                const banking = (parseFloat(c.z_cash) || 0) - pt
                 return (
                   <tr key={c.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-3 text-sm font-medium text-gray-900">{fmtDisplayDate(c.trn)}</td>
+                    <td className="px-3 py-3 text-sm font-medium text-gray-900">{fmtDate(c.trn)}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.z_cash) || 0).toFixed(2)}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.z_card) || 0).toFixed(2)}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.deliveroo) || 0).toFixed(2)}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.just_eat) || 0).toFixed(2)}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.tgtg) || 0).toFixed(2)}</td>
-                    <td className="px-3 py-3 text-sm text-right text-red-600">-£{payoutTotal.toFixed(2)}</td>
+                    <td className="px-3 py-3 text-sm text-right text-red-600">-£{pt.toFixed(2)}</td>
                     <td className="px-3 py-3 text-sm text-right font-semibold text-gray-900">£{banking.toFixed(2)}</td>
                   </tr>
                 )
