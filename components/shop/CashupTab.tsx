@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -59,13 +59,13 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  // Read week from URL ?week= param — default to today
+  // ── Read week ONLY from URL — this is the single source of truth ──────────
+  // Computed fresh on every render from the URL, no stale state possible
   const weekParam = searchParams.get('week')
-  const initial = weekParam && /^\d{4}-\d{2}-\d{2}$/.test(weekParam)
+  const weekStart = (weekParam && /^\d{4}-\d{2}-\d{2}$/.test(weekParam))
     ? weekParam
     : getWeekStart(today())
 
-  const [weekStart, setWeekStart] = useState(initial)
   const [cashups, setCashups] = useState<any[]>([])
   const [payouts, setPayouts] = useState<Record<string, any[]>>({})
   const [loading, setLoading] = useState(true)
@@ -73,11 +73,11 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
 
   const range = fmtRange(weekStart)
 
+  // Navigate to a new week — full page load ensures clean state
   function navigate(ws: string) {
-    setWeekStart(ws)
     const url = new URL(window.location.href)
     url.searchParams.set('week', ws)
-    router.push(url.path + '?' + url.searchParams.toString(), { scroll: false })
+    window.location.href = url.path + '?' + url.searchParams.toString()
   }
 
   useEffect(() => {
