@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-// ─── Date helpers — pure integer math, no timezone issues ───────────────────
+// ─── Date helpers ────────────────────────────────────────────────────────────
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -41,11 +41,6 @@ function fmtRange(ws: string) {
   return { start: fmt(y, m, d), end: fmt(end.getFullYear(), end.getMonth() + 1, end.getDate()) }
 }
 
-function fmtDate(trn: string): string {
-  const [y, m, d] = parseYMD(trn)
-  return fmt(y, m, d)
-}
-
 function today(): string {
   const d = new Date()
   return String(d.getFullYear()) + '-' +
@@ -53,13 +48,11 @@ function today(): string {
     String(d.getDate()).padStart(2, '0')
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── Component ──────────────────────────────────────────────────────────────
 
 export default function CashupTab({ shopId, refreshKey }: { shopId: string; refreshKey?: number }) {
-  const router = useRouter()
   const searchParams = useSearchParams()
 
-  // Week is read directly from the URL on every render — no stale state
   const weekParam = searchParams.get('week')
   const weekStart = (weekParam && /^\d{4}-\d{2}-\d{2}$/.test(weekParam))
     ? weekParam
@@ -69,6 +62,8 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
   const [payouts, setPayouts] = useState<Record<string, any[]>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  console.log('[CashupTab] URL ?week=', weekParam, '| resolved weekStart=', weekStart)
 
   const range = fmtRange(weekStart)
 
@@ -83,7 +78,6 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
       setLoading(true)
       setError('')
       const supabase = await createClient()
-
       const end = addWeeks(weekStart, 1)
       const { data, error: err } = await supabase
         .from('cashups')
@@ -94,7 +88,6 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
         .order('trn', { ascending: true })
 
       if (err) { setError(err.message); setLoading(false); return }
-
       setCashups(data || [])
 
       if (data && data.length > 0) {
@@ -113,7 +106,6 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
       } else {
         setPayouts({})
       }
-
       setLoading(false)
     }
     load()
@@ -188,7 +180,7 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
                 const banking = (parseFloat(c.z_cash) || 0) - pt
                 return (
                   <tr key={c.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-3 text-sm font-medium text-gray-900">{fmtDate(c.trn)}</td>
+                    <td className="px-3 py-3 text-sm font-medium text-gray-900">{c.trn}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.z_cash) || 0).toFixed(2)}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.z_card) || 0).toFixed(2)}</td>
                     <td className="px-3 py-3 text-sm text-right">£{(parseFloat(c.deliveroo) || 0).toFixed(2)}</td>
@@ -209,7 +201,7 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
                 <td className="px-3 py-3 text-sm text-right font-bold text-green-800">£{totals.just_eat.toFixed(2)}</td>
                 <td className="px-3 py-3 text-sm text-right font-bold text-green-800">£{totals.tgtg.toFixed(2)}</td>
                 <td className="px-3 py-3 text-sm text-right font-bold text-green-800">-£{totals.payouts.toFixed(2)}</td>
-                <td className="px-3 py-3 text-sm text-right font-bold text-green-800">£{totals.banking.toFixed(2)}</td>
+                <td className="px-3 py-3 text-8 text-right font-bold text-green-800">£{totals.banking.toFixed(2)}</td>
               </tr>
             </tfoot>
           </table>
