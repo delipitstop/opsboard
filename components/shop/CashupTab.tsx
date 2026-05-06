@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── Date helpers ────────────────────────────────────────────────────────────
@@ -52,7 +52,10 @@ function today(): string {
 
 export default function CashupTab({ shopId, refreshKey }: { shopId: string; refreshKey?: number }) {
   const searchParams = useSearchParams()
+  const router = useRouter()
 
+  // Use URL param if valid, otherwise default to current week
+  // This is read from URL on every render — no staleness possible
   const weekParam = searchParams.get('week')
   const weekStart = (weekParam && /^\d{4}-\d{2}-\d{2}$/.test(weekParam))
     ? weekParam
@@ -63,14 +66,13 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  console.log('[CashupTab] URL ?week=', weekParam, '| resolved weekStart=', weekStart)
-
-  const range = fmtRange(weekStart)
-
-  function navigate(ws: string) {
+  // Navigate to a specific week
+  function navigateToWeek(ws: string) {
     const url = new URL(window.location.href)
     url.searchParams.set('week', ws)
-    window.location.href = url.path + '?' + url.searchParams.toString()
+    // Preserve tab=cashup
+    url.searchParams.set('tab', 'cashup')
+    router.push(url.pathname + '?' + url.searchParams.toString())
   }
 
   useEffect(() => {
@@ -132,15 +134,21 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
     <div className="space-y-4">
       {/* Week Navigator */}
       <div className="flex items-center justify-between">
-        <button onClick={() => navigate(addWeeks(weekStart, -1))}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">← Prev</button>
+        <button
+          onClick={() => navigateToWeek(addWeeks(weekStart, -1))}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">
+          ← Prev
+        </button>
         <div className="text-center">
           <p className="text-xs text-gray-400 uppercase tracking-wide">Week Commencing</p>
-          <p className="text-base font-bold text-gray-900">{range.start}</p>
-          <p className="text-xs text-gray-400">– {range.end}</p>
+          <p className="text-base font-bold text-gray-900">{fmtRange(weekStart).start}</p>
+          <p className="text-xs text-gray-400">– {fmtRange(weekStart).end}</p>
         </div>
-        <button onClick={() => navigate(addWeeks(weekStart, 1))}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">Next →</button>
+        <button
+          onClick={() => navigateToWeek(addWeeks(weekStart, 1))}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 font-medium">
+          Next →
+        </button>
       </div>
 
       {/* Record Cashup */}
@@ -201,7 +209,7 @@ export default function CashupTab({ shopId, refreshKey }: { shopId: string; refr
                 <td className="px-3 py-3 text-sm text-right font-bold text-green-800">£{totals.just_eat.toFixed(2)}</td>
                 <td className="px-3 py-3 text-sm text-right font-bold text-green-800">£{totals.tgtg.toFixed(2)}</td>
                 <td className="px-3 py-3 text-sm text-right font-bold text-green-800">-£{totals.payouts.toFixed(2)}</td>
-                <td className="px-3 py-3 text-8 text-right font-bold text-green-800">£{totals.banking.toFixed(2)}</td>
+                <td className="px-3 py-3 text-sm text-right font-bold text-green-800">£{totals.banking.toFixed(2)}</td>
               </tr>
             </tfoot>
           </table>
